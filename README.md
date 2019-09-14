@@ -1,1 +1,1 @@
-# computational_methods
+# Методы обработки изображений
