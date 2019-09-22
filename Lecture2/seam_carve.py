@@ -35,23 +35,6 @@ def change_energy(energy, mask):
     delta = np.float64(energy.shape[0] * energy.shape[1] * 256.0)
     energy += delta * mask
 
-
-def vertical_transition(dp, pos, s, prev, delta):
-    '''
-    Переход динамики для deleat_vertical shrink
-    dp - матрица состояний
-    pos - позиция пересчитываемого элемента
-    s - смещене по горизонтали
-    prev - матрица востоновления пути
-    '''
-    y, x = pos
-    if x + s < 0 or x + s >= dp.shape[1]:
-        return
-    if dp[y - 1, x + s] + delta < dp[y, x]:
-        dp[y, x] = dp[y - 1, x + s] + delta
-        prev[y, x] = s
-
-
 def find_vertical_seam(img, mask):
     '''
     Нахождение вертикального шва с минимальной энергией из img.
@@ -68,9 +51,9 @@ def find_vertical_seam(img, mask):
     height, width = energy.shape
     for y in range(1, height):
         for x in range(0, width):
-            vertical_transition(dp, (y, x), -1, prev, energy[y][x])
-            vertical_transition(dp, (y, x), 0, prev, energy[y][x])
-            vertical_transition(dp, (y, x), 1, prev, energy[y][x])
+            shift = dp[y - 1, max(0, x - 1):min(width, x + 2)].argmin() - (0 if x - 1 < 0 else 1)
+            dp[y][x] = dp[y - 1][x + shift] + energy[y][x]
+            prev[y][x] = shift
 
     cur_position = [height - 1, 0]
     lowest_energy = dp[height - 1, 0]
@@ -100,13 +83,13 @@ def horizontal_shrink(img, mask):
 
     new_mask = np.zeros((height, width - 1), dtype='int8')
     out = np.zeros(((height, width - 1, 3)), dtype='uint8')
-#     for i in range(0, height):
-#         k = 0
-#         for j in range(0, width - 1):
-#             if seam_mask[i][j]:
-#                 k += 1
-#             out[i][j] = img[i][j + k]
-#             new_mask[i][j] = mask[i][j + k]
+    for i in range(0, height):
+        for j in range(0, width):
+            if seam_mask[i][j]:
+                out[i, :j] = img[i, :j]
+                out[i, j:] = img[i, j + 1:]
+                new_mask[i, :j] = mask[i, :j]
+                new_mask[i, j:] = mask[i, j + 1:]
 
     return [out, new_mask, seam_mask]
 
@@ -135,18 +118,18 @@ def horizontal_expand(img, mask):
     out = np.zeros((height, width + 1, 3), dtype='uint8')
     new_seam_mask = np.zeros((height, width + 1), dtype='int8')
 
-#     for i in range(0, height):
-#         k = 0
-#         for j in range(0, width):
-#             if seam_mask[i][j]:
-#                 k = 1
-#                 delta = img[i][j + 1] if j + 1 != width else img[i][j]
-#                 out[i][j + k] = img[i][j] // 2 + delta // 2
-#                 out[i][j] = img[i][j]
-#                 new_mask[i][j + k] = 0
-#             else:
-#                 out[i][j + k] = img[i][j]
-#                 new_mask[i][j + k] = mask[i][j]
+    for i in range(0, height):
+        k = 0
+        for j in range(0, width):
+            if seam_mask[i][j]:
+                delta = img[i][j + 1] if j + 1 != width else img[i][j]
+                out[i, :j + 1] = img[i, :j + 1]
+                out[i, j + 2:] = img[i, j + 1:]
+                out[i][j + 1] = img[i][j] // 2 + delta // 2
+                new_mask[i, :j + 1] = mask[i, :j + 1]
+                new_mask[i, j + 2:] = mask[i, j + 1:]
+                new_mask[i][j + 1] = mask[i][j]
+                
 
     return [out, new_mask, seam_mask]
 
