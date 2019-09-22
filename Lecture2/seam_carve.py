@@ -90,6 +90,7 @@ def horizontal_shrink(img, mask):
                 out[i, j:] = img[i, j + 1:]
                 new_mask[i, :j] = mask[i, :j]
                 new_mask[i, j:] = mask[i, j + 1:]
+                break
 
     return [out, new_mask, seam_mask]
 
@@ -129,6 +130,7 @@ def horizontal_expand(img, mask):
                 new_mask[i, :j + 1] = mask[i, :j + 1]
                 new_mask[i, j + 2:] = mask[i, j + 1:]
                 new_mask[i][j + 1] = mask[i][j]
+                break
                 
 
     return [out, new_mask, seam_mask]
