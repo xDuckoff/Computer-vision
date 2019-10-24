@@ -1,0 +1,122 @@
+import keras
+from skimage.io import imread
+import skimage
+import glob
+from os.path import join
+import numpy as np
+from os import listdir
+from skimage import transform
+
+
+def brightness(img):
+    return (0.299*img[:, :, 0] + 0.587*img[:, :, 1] + 0.114*img[:, :, 2]).astype('float32')
+
+def train_detector(train_gt, train_img_dir, fast_train=False):
+
+    batch_size = 12  
+    epochs = 1
+    img_size = 100
+
+    #загрузка данных
+    X_data = np.zeros((len(train_gt), img_size, img_size, 1))
+    y_data = np.zeros((len(train_gt), 28)).astype('float32')
+    files = glob.glob(join(train_img_dir, '*.jpg'))
+    num = 0
+    
+    for name in files:
+        i = name[-9:len(name)]
+        j = int(i[:5])
+        
+        in_img = imread(name, as_gray=True).astype('float32')   
+        img = skimage.transform.resize(in_img, (img_size, img_size, 1))
+        face_points = np.array(train_gt[i])
+        face_points[::2] *= (img_size / in_img.shape[1])
+        face_points[1::2] *= (img_size / in_img.shape[0])
+        X_data[num], y_data[num] = (img, face_points)
+        
+        num += 1
+        if num > 10 and fast_train:
+             break
+        
+    E = X_data.mean()
+    D = X_data.std()
+    X_data = (X_data - E) / D
+
+    import keras
+    from keras.regularizers import l2
+    from keras.models import Sequential
+    from keras.layers import Dense, Dropout, Flatten
+    from keras.layers.convolutional import Conv2D, MaxPooling2D
+    from keras.layers.local import LocallyConnected2D
+    from keras.layers.normalization import BatchNormalization
+    from keras.utils import np_utils
+    from keras import regularizers
+
+    model = Sequential()
+    model.add(Conv2D(20, kernel_size=(5, 5), activation='relu', 
+                     input_shape=(img_size, img_size, 1),
+                     kernel_initializer='he_uniform'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(BatchNormalization())
+
+    model.add(Conv2D(40, kernel_size=(5, 5), activation='relu',
+                     kernel_initializer='he_uniform'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(BatchNormalization())
+
+    model.add(Conv2D(60, kernel_size=(3, 3), activation='relu',
+                     kernel_initializer='he_uniform'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(BatchNormalization())
+
+    model.add(LocallyConnected2D(80, (3, 3), activation='relu',
+                     kernel_initializer='he_uniform'))
+
+
+    model.add(Flatten())
+
+
+    model.add(Dropout(0.25))
+    model.add(Dense(900, activation='relu',kernel_initializer='he_uniform'))
+    model.add(Dropout(0.25))
+    model.add(Dense(300, activation='relu',kernel_initializer='he_uniform'))
+    model.add(Dropout(0.25))
+
+    model.add(Dense(28, activation='relu',
+                    kernel_initializer='he_uniform'))
+
+    model.compile(loss="mse", optimizer="adam", metrics=['mae'])
+
+    model.fit(X_data, y_data,
+                  batch_size=batch_size,
+                  epochs=epochs,
+                  verbose=1,
+                  validation_split=0.1,
+                  shuffle=True) 
+
+    model.save("facepoints_model.hdf5")
+    
+def detect(model, test_img_dir):
+    imgSize = 100
+    dir_files_list = listdir(test_img_dir)
+    
+    inputData = np.zeros((len(dir_files_list), imgSize, imgSize, 1))
+    changeSize = np.zeros((len(dir_files_list), 2))
+
+    for i, filename in enumerate(dir_files_list):
+        img = imread(join(test_img_dir, filename), as_gray=True)
+        changeSize[i] = np.array([img.shape[0], img.shape[1]])
+        img = transform.resize(img, [imgSize, imgSize, 1], mode='reflect')
+        inputData[i] = img
+    
+    E = inputData.mean(axis=(0,1,2))
+    D = inputData.var(axis=(0,1,2))
+    inputData = (inputData - E) / D
+    
+    y = model.predict(inputData)
+    for i in range(y.shape[0]):
+        y[i, ::2] *= (changeSize[i][1] / imgSize)
+        y[i, 1::2] *= (changeSize[i][0] / imgSize)
+
+    return {filename: list(map(int, y[i])) for i, filename in enumerate(dir_files_list)}
+    
